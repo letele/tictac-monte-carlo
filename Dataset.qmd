@@ -1,0 +1,270 @@
+
+
+```{r}
+library(combinat)  
+source("R/check_state.R")
+source("R/pure_monte_carlo.R")
+source("R/monte_carlo_tree_search.R")
+
+
+# Helper to get all 8 symmetries of a board (4 rotations * 2 reflections)
+get_all_symmetries <- function(board_vec) {
+  m <- matrix(board_vec, 3, 3)
+  
+  # Function to rotate 90 deg clockwise
+  rot90 <- function(x) t(x)[, ncol(x):1]
+  
+  # Generate 4 rotations
+  r0 <- m
+  r1 <- rot90(r0)
+  r2 <- rot90(r1)
+  r3 <- rot90(r2)
+  
+  # Generate reflections of all rotations
+  symmetries <- list(
+    r0, r1, r2, r3,
+    t(r0), t(r1), t(r2), t(r3) # Transpose acts as a diagonal reflection
+  )
+  
+  # Return as character strings for easy comparison
+  sapply(symmetries, function(x) paste(as.vector(x), collapse = ","))
+}
+
+create_unique_dataset <- function(input_boards) {
+
+  all_unique_boards <- list()
+  seen_symmetries <- character()
+  
+  for(i in 1:nrow(input_boards)) {
+    # Generate unique permutations for this specific piece count
+    perms <- unique(
+      matrix(unlist(combinat::permn(input_boards[i,])), ncol=9, byrow=T)
+    )
+    
+    for(j in 1:nrow(perms)) {
+      board <- perms[j,]
+      board_str <- paste(board, collapse = ",")
+      
+      # Check if we've seen any symmetric version of this board
+      if (!(board_str %in% seen_symmetries)) {
+        if (is.null(check_state(board))) {
+          all_unique_boards[[length(all_unique_boards) + 1]] <- board
+          # Add all 8 symmetric versions to the 'seen' list
+          seen_symmetries <- c(seen_symmetries, get_all_symmetries(board))
+        }
+      }
+    }
+  }
+  
+  final_matrix <- matrix(unlist(all_unique_boards), ncol = 9, byrow = TRUE)
+  return(final_matrix)
+}
+```
+
+
+
+```{r}
+input_boards <- rbind(
+  c(0,0,0,0,0,0,0,0,0),
+  c(1,0,0,0,0,0,0,0,0),
+  c(1,-1,0,0,0,0,0,0,0),
+  c(1,-1,1,0,0,0,0,0,0),
+  c(1,-1,1,-1,0,0,0,0,0),
+  c(1,-1,1,-1,1,0,0,0,0),
+  c(1,-1,1,-1,1,-1,0,0,0),
+  c(1,-1,1,-1,1,-1,1,0,0),
+  c(1,-1,1,-1,1,-1,1,-1,0)
+)
+
+boards <- create_unique_dataset(input_boards)
+```
+
+
+
+```{r}
+generate_pmc_output <- function(board,nsims=1000){
+  player <- ifelse(sum(board != 0) %% 2 != 0, -1,1)
+  pmc_df <- pmc_results(board,player,nsims)
+  pmc_cell_prediction(board,player,pmc_df) 
+}
+
+pmc_res <- apply(boards, 1, function(row) generate_pmc_output(row))
+
+```
+
+
+```{r}
+generate_mcts_output <- function(board,alpha=1){
+  player <- ifelse(sum(board != 0) %% 2 != 0, -1,1)
+  tree_data <- monte_carlo_tree_search(board,player, alpha)
+      
+  mcts_results <- mcts_table(tree_data$stats)
+      
+  prediction <- mcts_prediction(board,player, mcts_results)
+  prediction
+}
+
+mcts_res <- apply(boards, 1, function(row) generate_mcts_output(row))
+
+
+```
+
+
+```{r}
+boards_with_outputs <- cbind(boards,pmc_res,mcts_res)
+```
+
+
+
+
+
+
+```{r}
+# Write to boards.csv
+write.table(boards_with_outputs, "data/boards.csv",  sep = ",", row.names = FALSE, col.names = FALSE)
+
+```
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(irr)      
+library(entropy) 
+```
+
+
+
+```{r}
+boards <- read.csv(
+  "data/boards.csv", header = FALSE, col.names = c(1:9, "PMC", "MCTS"),
+  check.names = FALSE
+)
+df <- boards[, c("PMC", "MCTS")]
+```
+
+
+
+
+```{r}
+
+
+data_long <- df %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "Algorithm",
+    values_to = "Cell"
+  )
+
+counts <- data_long %>%
+  count(Algorithm, Cell)
+
+ggplot(counts, aes(x = factor(Cell), y = n, fill = Algorithm)) +
+  geom_col(position = position_dodge(width = 0.9), alpha = 0.8) +
+  geom_text(
+    aes(label = n),
+    position = position_dodge(width = 0.9),
+    vjust = -0.3,
+    size = 3
+  ) +
+  scale_fill_manual(values = c("#FF9999", "#56B4E9")) +
+  labs(
+    title = "Prediction Frequencies",
+    x = "Cell Number",
+    y = "Count"
+  ) +
+  theme_bw()
+
+```
+
+
+```{r}
+conf_matrix <- as.data.frame(table(df$PMC, df$MCTS))
+colnames(conf_matrix) <- c("PMC", "MCTS", "Freq")
+overall_agreement <- round(mean(df$PMC == df$MCTS)*100, 1)
+ggplot(conf_matrix, aes(x = PMC, y = MCTS, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), color = "black") +
+  scale_fill_gradient(low = "#f7fbff", high = "hotpink") +
+  labs(
+    title = "Agreement Heatmap", 
+    subtitle = paste("Overall Agreement:", overall_agreement, "%"),
+    x = "PMC Predicted", y = "MCTS Predicted"
+    ) +
+  theme_bw()
+```
+
+
+
+
+```{r}
+
+
+# Calculate agreement
+df_summary <- df %>%
+  mutate(Agreement = ifelse(.[,1] == .[,2], "Agree", "Disagree")) %>%
+  summarise(
+    Count = n(),
+    Agree = sum(Agreement == "Agree"),
+    Disagree = sum(Agreement == "Disagree"),
+    Agreement_Rate = Agree / Count,
+    Disagreement_Rate = Disagree / Count
+  )
+
+df_table <- tibble(
+  Outcome = c("Agree", "Disagree"),
+  Count = c(df_summary$Agree, df_summary$Disagree),
+  Rate = c(df_summary$Agreement_Rate, df_summary$Disagreement_Rate)
+)%>% mutate(Rate = scales::percent(Rate, accuracy = 0.1))
+
+df_table 
+
+```
+
+
+
+```{r}
+
+
+# ---- Cohen's Kappa ----
+kappa_res <- kappa2(df)  
+kappa_value <- kappa_res$value
+
+# ---- Chi-squared test ----
+conf_matrix <- table(df$PMC, df$MCTS)
+chi_res <- chisq.test(conf_matrix)
+
+# ---- Entropy ----
+# Marginal entropy of PMC
+pmc_entropy <- entropy::entropy(table(df$PMC), unit = "log2")
+# Marginal entropy of MCTS
+mcts_entropy <- entropy::entropy(table(df$MCTS), unit = "log2")
+# Joint entropy (PMC,MCTS)
+joint_entropy <- entropy::entropy(conf_matrix, unit = "log2")
+
+# ---- Summary table ----
+summary_table <- tibble(
+  Metric = c(
+    "Cohen's Kappa",
+    "Chi-squared Statistic",
+    "Chi-squared p-value",
+    "PMC Entropy",
+    "MCTS Entropy",
+    "Joint Entropy"
+  ),
+  Value = c(
+    round(kappa_value, 3),
+    round(chi_res$statistic, 3),
+    chi_res$p.value,
+    round(pmc_entropy, 3),
+    round(mcts_entropy, 3),
+    round(joint_entropy, 3)
+  )
+)
+
+summary_table
+
+```
+
+
