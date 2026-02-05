@@ -32,4 +32,4 @@ jobs:
                   token='${{ secrets.SHINYAPPS_TOKEN }}',
                   secret='${{ secrets.SHINYAPPS_SECRET }}'
                 )"
-          R -e "rsconnect::deployApp('.', appName='tictac-montecarlo')"
+          R -e "rsconnect::deployApp('.', appName='tictac-montecarlo',  forceUpdate = TRUE)"
