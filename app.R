@@ -362,7 +362,8 @@ freq_plot <- ggplot(counts, aes(x = factor(Cell), y = n, fill = Algorithm)) +
   ) +
   scale_fill_manual(values = c("#fc5e5e", "#4eb8f1ff")) +
   labs(x = "Cell Number",y = "Count") +
-  theme_bw()
+  theme_bw() +
+  theme(text = element_text(family = "sans"))
 
 conf_matrix <- as.data.frame(table(pmc_mcts_df$PMC, pmc_mcts_df$MCTS))
 colnames(conf_matrix) <- c("PMC", "MCTS", "Freq")
@@ -372,8 +373,8 @@ heatmap <- ggplot(conf_matrix, aes(x = PMC, y = MCTS, fill = Freq)) +
   geom_text(aes(label = Freq), color = "black") +
   scale_fill_gradient(low = "#f7fbff", high = "hotpink") +
   labs(x = "PMC Predicted Cell", y = "MCTS Predicted Cell") +
-  theme_bw()
-
+  theme_bw() +
+  theme(text = element_text(family = "sans"))
 
 # Calculate agreement
 df_summary <- pmc_mcts_df %>%

@@ -211,7 +211,7 @@ plot_tree <- function(tree_data) {
       p <- p + geom_text(
         data = text_data,
         aes(x = x, y = y, label = n_lbl, color = n_col),
-        size = 4, fontface = "bold"
+        size = 4, fontface = "bold",  family = "sans"
       )
     }
     
@@ -227,7 +227,7 @@ plot_tree <- function(tree_data) {
   p <- p + 
     scale_color_identity() + 
     scale_linetype_identity() + 
-    scale_size_identity()
+    scale_size_identity() 
   
   print(p)
 }
